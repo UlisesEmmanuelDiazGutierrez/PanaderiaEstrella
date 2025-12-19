@@ -1,12 +1,10 @@
 /**
- * API DE PRODUCTOS
- *
- * Endpoints para gestionar productos (cortes de carne)
+ * API DE PRODUCTOS (ACTUALIZADA CON FUNCIONES DE ADMIN)
  *
  * GET /api/products - Obtener todos los productos
- * GET /api/products?category=Res - Filtrar por categoría
- * GET /api/products?promo=true - Solo promociones
  * POST /api/products - Crear nuevo producto (admin)
+ * PUT /api/products - Actualizar producto existente (admin)
+ * DELETE /api/products - Eliminar producto (admin)
  */
 
 import { NextResponse } from "next/server";
@@ -15,49 +13,37 @@ import { ObjectId } from "mongodb";
 
 /**
  * GET - Obtener productos
- * Query params opcionales:
- * - category: Filtrar por categoría (Res, Cerdo, Cortes)
- * - promo: Solo promociones (true)
- * - search: Buscar por nombre
  */
 export async function GET(request) {
   try {
-    // Conectar a MongoDB
     const client = await clientPromise;
     const db = client.db("estrellabeef");
 
-    // Obtener parámetros de búsqueda desde URL
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
     const promo = searchParams.get("promo");
     const search = searchParams.get("search");
 
-    // Construir filtro de búsqueda
-    let filter = { isActive: true }; // Solo productos activos
+    let filter = { isActive: true };
 
-    // Filtrar por categoría
     if (category && category !== "Todo") {
       filter.category = category;
     }
 
-    // Filtrar por promociones
     if (promo === "true") {
       filter.promo = true;
     }
 
-    // Buscar por nombre (búsqueda insensible a mayúsculas)
     if (search) {
       filter.name = { $regex: search, $options: "i" };
     }
 
-    // Obtener productos de la base de datos
     const products = await db
       .collection("products")
       .find(filter)
-      .sort({ category: 1, name: 1 }) // Ordenar por categoría y nombre
+      .sort({ category: 1, name: 1 })
       .toArray();
 
-    // Retornar respuesta exitosa
     return NextResponse.json({
       success: true,
       count: products.length,
@@ -77,22 +63,10 @@ export async function GET(request) {
 }
 
 /**
- * POST - Crear nuevo producto (solo admin)
- * Body requerido:
- * {
- *   name: string,
- *   price: number,
- *   weight: number,
- *   image: string,
- *   category: string,
- *   stock: number,
- *   promo: boolean,
- *   description: string (opcional)
- * }
+ * POST - Crear nuevo producto (admin)
  */
 export async function POST(request) {
   try {
-    // Obtener datos del body
     const body = await request.json();
 
     // Validar campos requeridos
@@ -107,10 +81,7 @@ export async function POST(request) {
     for (const field of requiredFields) {
       if (!body[field] && body[field] !== 0) {
         return NextResponse.json(
-          {
-            success: false,
-            error: `El campo '${field}' es obligatorio`,
-          },
+          { success: false, error: `El campo '${field}' es obligatorio` },
           { status: 400 }
         );
       }
@@ -128,11 +99,10 @@ export async function POST(request) {
       );
     }
 
-    // Conectar a MongoDB
     const client = await clientPromise;
     const db = client.db("estrellabeef");
 
-    // Crear objeto de producto
+    // Crear producto
     const newProduct = {
       name: body.name,
       price: parseFloat(body.price),
@@ -147,18 +117,13 @@ export async function POST(request) {
       updatedAt: new Date(),
     };
 
-    // Insertar en la base de datos
     const result = await db.collection("products").insertOne(newProduct);
 
-    // Retornar producto creado
     return NextResponse.json(
       {
         success: true,
         message: "Producto creado exitosamente",
-        data: {
-          _id: result.insertedId,
-          ...newProduct,
-        },
+        data: { _id: result.insertedId, ...newProduct },
       },
       { status: 201 }
     );
@@ -176,14 +141,12 @@ export async function POST(request) {
 }
 
 /**
- * PUT - Actualizar producto existente
- * Body: { id: string, ...campos a actualizar }
+ * PUT - Actualizar producto existente (admin)
  */
 export async function PUT(request) {
   try {
     const body = await request.json();
 
-    // Validar ID
     if (!body.id) {
       return NextResponse.json(
         { success: false, error: "ID del producto es obligatorio" },
@@ -194,18 +157,7 @@ export async function PUT(request) {
     const client = await clientPromise;
     const db = client.db("estrellabeef");
 
-    // Convertir a ObjectId
-    let productFilter;
-    try {
-      productFilter = { _id: new ObjectId(body.id) };
-    } catch (error) {
-      return NextResponse.json(
-        { success: false, error: "ID de producto inválido" },
-        { status: 400 }
-      );
-    }
-
-    // Construir objeto de actualización (solo campos proporcionados)
+    // Construir objeto de actualización
     const updateFields = {};
     const allowedFields = [
       "name",
@@ -230,7 +182,7 @@ export async function PUT(request) {
     // Actualizar producto
     const result = await db
       .collection("products")
-      .updateOne(productFilter, { $set: updateFields });
+      .updateOne({ _id: new ObjectId(body.id) }, { $set: updateFields });
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
@@ -239,10 +191,15 @@ export async function PUT(request) {
       );
     }
 
+    // Obtener producto actualizado
+    const updatedProduct = await db
+      .collection("products")
+      .findOne({ _id: new ObjectId(body.id) });
+
     return NextResponse.json({
       success: true,
       message: "Producto actualizado exitosamente",
-      modifiedCount: result.modifiedCount,
+      data: updatedProduct,
     });
   } catch (error) {
     console.error("Error al actualizar producto:", error);
@@ -259,7 +216,6 @@ export async function PUT(request) {
 
 /**
  * DELETE - Eliminar producto (soft delete)
- * Query param: id
  */
 export async function DELETE(request) {
   try {
@@ -276,21 +232,13 @@ export async function DELETE(request) {
     const client = await clientPromise;
     const db = client.db("estrellabeef");
 
-    // Convertir a ObjectId
-    let productFilter;
-    try {
-      productFilter = { _id: new ObjectId(id) };
-    } catch (error) {
-      return NextResponse.json(
-        { success: false, error: "ID de producto inválido" },
-        { status: 400 }
+    // Soft delete
+    const result = await db
+      .collection("products")
+      .updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isActive: false, updatedAt: new Date() } }
       );
-    }
-
-    // Soft delete (marcar como inactivo)
-    const result = await db.collection("products").updateOne(productFilter, {
-      $set: { isActive: false, updatedAt: new Date() },
-    });
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
