@@ -90,6 +90,23 @@ function App() {
     address: "",
     phone: "",
   });
+
+  // ========== NUEVOS ESTADOS PARA 2FA Y REGISTRO ==========
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [tempUserId, setTempUserId] = useState(null);
+  const [code2FA, setCode2FA] = useState("");
+  const [registerForm, setRegisterForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    phone: "",
+  });
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [countdown, setCountdown] = useState(600);
+
   const [payment, setPayment] = useState("");
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -132,6 +149,17 @@ function App() {
     }
   }, [message]);
 
+  // EFECTO PARA EL COUNTDOWN DEL CÓDIGO 2FA
+  useEffect(() => {
+    if (show2FAModal && countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0) {
+      toast.error("El código ha expirado");
+      setShow2FAModal(false);
+    }
+  }, [show2FAModal, countdown]);
+
   // ========== FUNCIONES API ==========
   const fetchProducts = async () => {
     try {
@@ -165,8 +193,8 @@ function App() {
     category === "Todo"
       ? products
       : category === "Promociones"
-      ? products.filter((p) => p.promo)
-      : products.filter((p) => p.category === category);
+        ? products.filter((p) => p.promo)
+        : products.filter((p) => p.category === category);
   const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const weight = cart.reduce((s, i) => s + i.weight * i.quantity, 0);
 
@@ -176,8 +204,8 @@ function App() {
     if (exists) {
       setCart(
         cart.map((i) =>
-          i.id === p._id ? { ...i, quantity: i.quantity + 1 } : i
-        )
+          i.id === p._id ? { ...i, quantity: i.quantity + 1 } : i,
+        ),
       );
     } else {
       setCart([
@@ -210,19 +238,196 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginForm),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast.error(errorData.error || "Error en el servidor");
+        setLoading(false);
+        return;
+      }
+
       const data = await response.json();
-      if (data.success) {
+
+      if (data.success && data.require2FA) {
+        setTempUserId(data.userId);
+        setShow2FAModal(true);
+        setCountdown(600);
+        toast.success("Código enviado a tu email");
+      } else if (data.success) {
         setUser(data.user);
         toast.success(`Bienvenido, ${data.user.name}`);
-        setLoginForm({ email: "", password: "" });
       } else {
         toast.error(data.error || "Credenciales incorrectas");
       }
     } catch (error) {
-      toast.error("Error al iniciar sesión");
+      console.error("Error en login:", error);
+      toast.error("Error de conexión con el servidor");
     } finally {
       setLoading(false);
     }
+  };
+
+  // ========== VERIFICAR CÓDIGO 2FA ==========
+  const verify2FA = async () => {
+    if (code2FA.length !== 6) {
+      toast.error("El código debe tener 6 dígitos");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/verify-2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: tempUserId, code: code2FA }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast.error(errorData.error || "Error al verificar código");
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setUser(data.user);
+        setShow2FAModal(false);
+        setCode2FA("");
+        toast.success(`Bienvenido, ${data.user.name}`);
+        setLoginForm({ email: "", password: "" });
+      } else {
+        toast.error(data.error || "Código inválido");
+      }
+    } catch (error) {
+      console.error("Error en verify-2fa:", error);
+      toast.error("Error al verificar código");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ========== REENVIAR CÓDIGO 2FA ==========
+  const resend2FA = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/resend-2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: tempUserId }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCountdown(600);
+        toast.success("Nuevo código enviado");
+      } else {
+        toast.error(data.error || "Error al reenviar código");
+      }
+    } catch (error) {
+      console.error("Error en resend-2fa:", error);
+      toast.error("Error al reenviar código");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ========== REGISTRAR USUARIO ==========
+  const handleRegister = async (e) => {
+    e.preventDefault();
+
+    if (!registerForm.name || !registerForm.email || !registerForm.password) {
+      toast.error("Todos los campos son requeridos");
+      return;
+    }
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      toast.error("Las contraseñas no coinciden");
+      return;
+    }
+
+    if (registerForm.password.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(registerForm),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast.error(errorData.error || "Error al registrar");
+        setLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("¡Registro exitoso! Ya puedes iniciar sesión");
+        setShowRegisterModal(false);
+        setRegisterForm({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          phone: "",
+        });
+      } else {
+        toast.error(data.error || "Error al registrar");
+      }
+    } catch (error) {
+      console.error("Error en register:", error);
+      toast.error("Error de conexión");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ========== RECUPERAR CONTRASEÑA ==========
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+
+    if (!forgotEmail) {
+      toast.error("Ingresa tu email");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Revisa tu email para restablecer tu contraseña");
+        setShowForgotModal(false);
+        setForgotEmail("");
+      } else {
+        toast.error(data.error || "Error al enviar email");
+      }
+    } catch (error) {
+      console.error("Error en forgot-password:", error);
+      toast.error("Error de conexión");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ========== LOGIN CON GOOGLE ==========
+  const handleGoogleLogin = () => {
+    window.location.href = "/api/auth/google";
   };
 
   // ========== FUNCIÓN CREAR PEDIDO ==========
@@ -339,7 +544,7 @@ function App() {
       const data = await response.json();
       if (data.success) {
         toast.success(
-          editingProduct ? "Producto actualizado" : "Producto creado"
+          editingProduct ? "Producto actualizado" : "Producto creado",
         );
         setShowProductModal(false);
         fetchProducts();
@@ -658,10 +863,6 @@ function App() {
       </div>
     );
   }
-
-  // ==========================================
-  // VISTA: PAQUETERÍA
-  // ==========================================
   if (user.role === "shipping") {
     return (
       <div
@@ -720,8 +921,8 @@ function App() {
                       o.status === "delivered"
                         ? "bg-green-500"
                         : o.status === "transit"
-                        ? "bg-yellow-500 text-gray-900"
-                        : "bg-gray-600"
+                          ? "bg-yellow-500 text-gray-900"
+                          : "bg-gray-600"
                     }`}
                   >
                     {o.status.toUpperCase()}
@@ -1127,8 +1328,8 @@ function App() {
                               o.status === "delivered"
                                 ? "bg-green-100 text-green-800"
                                 : o.status === "pending"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : "bg-blue-100 text-blue-800"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-blue-100 text-blue-800"
                             }`}
                           >
                             {o.status}
@@ -1383,8 +1584,8 @@ function App() {
                     {loading
                       ? "Guardando..."
                       : editingProduct
-                      ? "Actualizar"
-                      : "Crear Producto"}
+                        ? "Actualizar"
+                        : "Crear Producto"}
                   </button>
                   <button
                     type="button"
@@ -1880,8 +2081,8 @@ function App() {
                         {m === "card"
                           ? "Tarjeta"
                           : m === "transfer"
-                          ? "Transferencia"
-                          : "Efectivo"}
+                            ? "Transferencia"
+                            : "Efectivo"}
                       </span>
                       {payment === m && (
                         <CheckIcon
