@@ -20,7 +20,7 @@ export async function GET(request) {
       parseInt(searchParams.get("month")) || new Date().getMonth() + 1;
 
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Construir filtro de fecha
     let dateFilter = {};
@@ -78,8 +78,8 @@ export async function GET(request) {
         order.payment === "card"
           ? "Tarjeta"
           : order.payment === "transfer"
-          ? "Transferencia"
-          : "Efectivo",
+            ? "Transferencia"
+            : "Efectivo",
         order.status,
         productos,
       ];
@@ -117,7 +117,7 @@ export async function GET(request) {
         error: "Error al generar reporte",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

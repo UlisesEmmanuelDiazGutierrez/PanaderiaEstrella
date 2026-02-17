@@ -28,7 +28,7 @@ export async function POST(request) {
             success: false,
             error: `El campo '${field}' es obligatorio`,
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
@@ -41,7 +41,7 @@ export async function POST(request) {
           success: false,
           error: "Email inválido",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -52,7 +52,7 @@ export async function POST(request) {
           success: false,
           error: "La contraseña debe tener al menos 3 caracteres",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -65,12 +65,12 @@ export async function POST(request) {
           success: false,
           error: "Rol inválido",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Verificar si el email ya existe
     const existingUser = await db.collection("users").findOne({
@@ -83,7 +83,7 @@ export async function POST(request) {
           success: false,
           error: "Este email ya está registrado",
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -123,7 +123,7 @@ export async function POST(request) {
         message: "Usuario registrado exitosamente",
         user: userData,
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
     console.error("Error en registro:", error);
@@ -133,7 +133,7 @@ export async function POST(request) {
         error: "Error al registrar usuario",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -41,7 +41,7 @@ export async function POST(request) {
 
     // Conectar a MongoDB
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Buscar usuario por email
     const user = await db.collection("users").findOne({

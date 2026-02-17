@@ -17,7 +17,7 @@ import { ObjectId } from "mongodb";
 export async function GET(request) {
   try {
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
@@ -57,7 +57,7 @@ export async function GET(request) {
         error: "Error al obtener productos",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -82,25 +82,25 @@ export async function POST(request) {
       if (!body[field] && body[field] !== 0) {
         return NextResponse.json(
           { success: false, error: `El campo '${field}' es obligatorio` },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
 
     // Validar categoría
-    const validCategories = ["Res", "Cerdo", "Cortes"];
+    const validCategories = ["Pan Dulce", "Pan Salado", "Bollería", "Pasteles"];
     if (!validCategories.includes(body.category)) {
       return NextResponse.json(
         {
           success: false,
           error: "Categoría inválida. Debe ser: Res, Cerdo o Cortes",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Crear producto
     const newProduct = {
@@ -125,7 +125,7 @@ export async function POST(request) {
         message: "Producto creado exitosamente",
         data: { _id: result.insertedId, ...newProduct },
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
     console.error("Error al crear producto:", error);
@@ -135,7 +135,7 @@ export async function POST(request) {
         error: "Error al crear producto",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -150,12 +150,12 @@ export async function PUT(request) {
     if (!body.id) {
       return NextResponse.json(
         { success: false, error: "ID del producto es obligatorio" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Construir objeto de actualización
     const updateFields = {};
@@ -187,7 +187,7 @@ export async function PUT(request) {
     if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, error: "Producto no encontrado" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -209,7 +209,7 @@ export async function PUT(request) {
         error: "Error al actualizar producto",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -225,25 +225,25 @@ export async function DELETE(request) {
     if (!id) {
       return NextResponse.json(
         { success: false, error: "ID del producto es obligatorio" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Soft delete
     const result = await db
       .collection("products")
       .updateOne(
         { _id: new ObjectId(id) },
-        { $set: { isActive: false, updatedAt: new Date() } }
+        { $set: { isActive: false, updatedAt: new Date() } },
       );
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, error: "Producto no encontrado" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -259,7 +259,7 @@ export async function DELETE(request) {
         error: "Error al eliminar producto",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

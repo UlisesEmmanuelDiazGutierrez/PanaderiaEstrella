@@ -28,13 +28,13 @@ export async function POST(request) {
           success: false,
           error: "Email y contraseña son obligatorios",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Conectar a MongoDB
     const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const db = client.db("panaderia_db");
 
     // Buscar usuario por email
     const user = await db.collection("users").findOne({
@@ -48,7 +48,7 @@ export async function POST(request) {
           success: false,
           error: "Credenciales incorrectas",
         },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -59,7 +59,7 @@ export async function POST(request) {
           success: false,
           error: "Cuenta inactiva. Contacta al administrador",
         },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -72,7 +72,7 @@ export async function POST(request) {
           success: false,
           error: "Credenciales incorrectas",
         },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -100,7 +100,7 @@ export async function POST(request) {
         error: "Error al iniciar sesión",
         message: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

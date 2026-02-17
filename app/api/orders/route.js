@@ -1,351 +1,203 @@
-/**
- * API DE PEDIDOS
- *
- * Endpoints para gestionar pedidos
- *
- * GET /api/orders - Obtener pedidos (filtrar por usuario/método)
- * POST /api/orders - Crear nuevo pedido
- * PUT /api/orders - Actualizar estado del pedido
- */
-
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
-import { ObjectId } from "mongodb";
 
-/**
- * GET - Obtener pedidos
- * Query params opcionales:
- * - userId: Filtrar por usuario
- * - method: delivery o shipping
- * - status: pending, picked, transit, delivered, cancelled
- */
+// Datos de prueba en memoria
+let orders = [];
+
+// GET - Obtener órdenes
 export async function GET(request) {
-  try {
-    const client = await clientPromise;
-    const db = client.db("estrellabeef");
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get("userId");
+  const method = searchParams.get("method");
 
-    // Obtener parámetros de búsqueda
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const method = searchParams.get("method");
-    const status = searchParams.get("status");
+  let filteredOrders = orders;
 
-    // Construir filtro
-    let filter = {};
-
-    if (userId) {
-      filter.userId = userId;
-    }
-
-    if (method) {
-      filter.method = method;
-    }
-
-    if (status) {
-      filter.status = status;
-    }
-
-    // Obtener pedidos
-    const orders = await db
-      .collection("orders")
-      .find(filter)
-      .sort({ createdAt: -1 }) // Más recientes primero
-      .toArray();
-
-    return NextResponse.json({
-      success: true,
-      count: orders.length,
-      data: orders,
-    });
-  } catch (error) {
-    console.error("Error al obtener pedidos:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Error al obtener pedidos",
-        message: error.message,
-      },
-      { status: 500 }
-    );
+  if (userId) {
+    filteredOrders = orders.filter((o) => o.userId === userId);
+  } else if (method) {
+    filteredOrders = orders.filter((o) => o.method === method);
   }
+
+  return NextResponse.json({
+    success: true,
+    count: filteredOrders.length,
+    data: filteredOrders,
+  });
 }
 
-/**
- * POST - Crear nuevo pedido
- * Body requerido:
- * {
- *   userId: string,
- *   items: [{productId, name, price, quantity, weight, image}],
- *   customer: {name, address, phone},
- *   total: number,
- *   weight: number,
- *   method: string (delivery/shipping),
- *   payment: string (card/transfer/cash)
- * }
- */
+// POST - Crear orden
 export async function POST(request) {
   try {
     const body = await request.json();
 
-    // Validar campos requeridos
-    const requiredFields = [
-      "userId",
-      "items",
-      "customer",
-      "total",
-      "weight",
-      "method",
-      "payment",
-    ];
-    for (const field of requiredFields) {
-      if (!body[field]) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `El campo '${field}' es obligatorio`,
-          },
-          { status: 400 }
-        );
-      }
-    }
+    console.log("📦 Datos recibidos:", JSON.stringify(body, null, 2));
 
-    // Validar items
-    if (!Array.isArray(body.items) || body.items.length === 0) {
+    // Validaciones
+    if (!body.userId) {
+      console.log("❌ Falta userId");
       return NextResponse.json(
-        {
-          success: false,
-          error: "El pedido debe tener al menos un producto",
-        },
-        { status: 400 }
+        { success: false, message: "userId es requerido" },
+        { status: 400 },
       );
     }
 
-    // Validar customer
-    if (!body.customer.name || !body.customer.address || !body.customer.phone) {
+    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+      console.log("❌ Falta items o está vacío");
       return NextResponse.json(
-        {
-          success: false,
-          error: "Datos del cliente incompletos",
-        },
-        { status: 400 }
+        { success: false, message: "items es requerido" },
+        { status: 400 },
       );
     }
 
-    // Validar método de entrega
-    if (!["delivery", "shipping"].includes(body.method)) {
+    if (!body.delivery) {
+      console.log("❌ Falta delivery");
       return NextResponse.json(
-        {
-          success: false,
-          error: "Método de entrega inválido",
-        },
-        { status: 400 }
+        { success: false, message: "delivery es requerido" },
+        { status: 400 },
       );
     }
 
-    // Validar método de pago
-    if (!["card", "transfer", "cash"].includes(body.payment)) {
+    if (!body.delivery.name || !body.delivery.address || !body.delivery.phone) {
+      console.log("❌ Datos de delivery incompletos");
       return NextResponse.json(
         {
           success: false,
-          error: "Método de pago inválido",
+          message: "Datos de entrega incompletos (name, address, phone)",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    if (!body.total) {
+      console.log("❌ Falta total");
+      return NextResponse.json(
+        { success: false, message: "total es requerido" },
+        { status: 400 },
+      );
+    }
 
-    // Crear objeto de pedido
+    if (!body.weight) {
+      console.log("❌ Falta weight");
+      return NextResponse.json(
+        { success: false, message: "weight es requerido" },
+        { status: 400 },
+      );
+    }
+
+    if (!body.payment) {
+      console.log("❌ Falta payment");
+      return NextResponse.json(
+        { success: false, message: "payment es requerido" },
+        { status: 400 },
+      );
+    }
+
+    if (!body.method) {
+      console.log("❌ Falta method");
+      return NextResponse.json(
+        { success: false, message: "method es requerido" },
+        { status: 400 },
+      );
+    }
+
+    // Crear la orden
     const newOrder = {
+      _id: Date.now().toString(),
       userId: body.userId,
       items: body.items.map((item) => ({
         productId: item.id || item.productId,
         name: item.name,
         price: parseFloat(item.price),
         quantity: parseFloat(item.quantity),
-        weight: parseFloat(item.weight),
-        image: item.image,
+        weight: parseFloat(item.weight || 1),
+        image: item.image || "",
       })),
       customer: {
-        name: body.customer.name,
-        address: body.customer.address,
-        phone: body.customer.phone,
+        name: body.delivery.name,
+        address: body.delivery.address,
+        phone: body.delivery.phone,
       },
       total: parseFloat(body.total),
       weight: parseFloat(body.weight),
-      method: body.method,
       payment: body.payment,
+      method: body.method,
       status: "pending",
-      statusHistory: [
-        {
-          status: "pending",
-          timestamp: new Date(),
-        },
-      ],
       notes: body.notes || "",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    // Insertar pedido
-    const result = await db.collection("orders").insertOne(newOrder);
+    orders.push(newOrder);
 
-    // Actualizar stock de productos
-    for (const item of body.items) {
-      const productId = item.id || item.productId;
-
-      // Intentar convertir a ObjectId si es necesario
-      let filter;
-      try {
-        filter = { _id: new ObjectId(productId) };
-      } catch {
-        filter = { _id: productId };
-      }
-
-      await db.collection("products").updateOne(filter, {
-        $inc: { stock: -item.quantity }, // Reducir stock
-        $set: { updatedAt: new Date() },
-      });
-    }
+    console.log("✅ Orden creada exitosamente:", newOrder._id);
 
     return NextResponse.json(
       {
         success: true,
+        data: newOrder,
         message: "Pedido creado exitosamente",
-        data: {
-          _id: result.insertedId,
-          ...newOrder,
-        },
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
-    console.error("Error al crear pedido:", error);
+    console.error("❌ Error crítico al crear orden:", error);
+    console.error("Stack trace:", error.stack);
+
     return NextResponse.json(
       {
         success: false,
-        error: "Error al crear pedido",
-        message: error.message,
+        message: "Error al crear orden",
+        error: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-/**
- * PUT - Actualizar estado del pedido
- * Body: { orderId: string, status: string, updatedBy: string }
- */
+// PUT - Actualizar estado de orden
 export async function PUT(request) {
   try {
     const body = await request.json();
+    const { orderId, status } = body;
 
-    // Validar campos
-    if (!body.orderId || !body.status) {
+    if (!orderId || !status) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "orderId y status son obligatorios",
-        },
-        { status: 400 }
+        { success: false, message: "orderId y status son obligatorios" },
+        { status: 400 },
       );
     }
 
-    // Validar estado
-    const validStatuses = [
-      "pending",
-      "picked",
-      "transit",
-      "delivered",
-      "cancelled",
-    ];
-    if (!validStatuses.includes(body.status)) {
+    const index = orders.findIndex((o) => o._id === orderId);
+
+    if (index === -1) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Estado inválido",
-        },
-        { status: 400 }
+        { success: false, message: "Orden no encontrada" },
+        { status: 404 },
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db("estrellabeef");
-
-    // Convertir orderId a ObjectId
-    let orderFilter;
-    try {
-      orderFilter = { _id: new ObjectId(body.orderId) };
-    } catch (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "ID de pedido inválido",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Preparar actualización
-    const updateData = {
-      status: body.status,
-      updatedAt: new Date(),
+    orders[index] = {
+      ...orders[index],
+      status,
+      updatedAt: new Date().toISOString(),
     };
 
-    // Si se entregó, guardar fecha
-    if (body.status === "delivered") {
-      updateData.deliveredAt = new Date();
-    }
-
-    // Agregar al historial
-    const historyEntry = {
-      status: body.status,
-      timestamp: new Date(),
-    };
-
-    if (body.updatedBy) {
-      historyEntry.updatedBy = body.updatedBy;
-    }
-
-    // Actualizar pedido
-    const result = await db.collection("orders").updateOne(orderFilter, {
-      $set: updateData,
-      $push: { statusHistory: historyEntry },
-    });
-
-    if (result.matchedCount === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Pedido no encontrado",
-        },
-        { status: 404 }
-      );
-    }
+    console.log(`✅ Orden ${orderId} actualizada a ${status}`);
 
     return NextResponse.json({
       success: true,
-      message: `Pedido actualizado a ${body.status}`,
-      modifiedCount: result.modifiedCount,
+      data: orders[index],
+      message: `Pedido actualizado a ${status}`,
     });
   } catch (error) {
-    console.error("Error al actualizar pedido:", error);
+    console.error("Error al actualizar orden:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Error al actualizar pedido",
-        message: error.message,
-      },
-      { status: 500 }
+      { success: false, message: "Error al actualizar orden" },
+      { status: 500 },
     );
   }
 }
 
-/**
- * DELETE - Cancelar pedido
- * Query param: id
- */
+// DELETE - Cancelar pedido
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -353,74 +205,38 @@ export async function DELETE(request) {
 
     if (!id) {
       return NextResponse.json(
-        { success: false, error: "ID del pedido es obligatorio" },
-        { status: 400 }
+        { success: false, message: "ID del pedido es obligatorio" },
+        { status: 400 },
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db("estrellabeef");
+    const index = orders.findIndex((o) => o._id === id);
 
-    // Convertir a ObjectId
-    let orderFilter;
-    try {
-      orderFilter = { _id: new ObjectId(id) };
-    } catch (error) {
+    if (index === -1) {
       return NextResponse.json(
-        { success: false, error: "ID de pedido inválido" },
-        { status: 400 }
-      );
-    }
-
-    // Obtener pedido para restaurar stock
-    const order = await db.collection("orders").findOne(orderFilter);
-
-    if (!order) {
-      return NextResponse.json(
-        { success: false, error: "Pedido no encontrado" },
-        { status: 404 }
+        { success: false, message: "Pedido no encontrado" },
+        { status: 404 },
       );
     }
 
     // Solo permitir cancelar pedidos pendientes
-    if (order.status !== "pending") {
+    if (orders[index].status !== "pending") {
       return NextResponse.json(
         {
           success: false,
-          error: "Solo se pueden cancelar pedidos pendientes",
+          message: "Solo se pueden cancelar pedidos pendientes",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Restaurar stock de productos
-    for (const item of order.items) {
-      let productFilter;
-      try {
-        productFilter = { _id: new ObjectId(item.productId) };
-      } catch {
-        productFilter = { _id: item.productId };
-      }
+    orders[index] = {
+      ...orders[index],
+      status: "cancelled",
+      updatedAt: new Date().toISOString(),
+    };
 
-      await db.collection("products").updateOne(productFilter, {
-        $inc: { stock: item.quantity }, // Restaurar stock
-        $set: { updatedAt: new Date() },
-      });
-    }
-
-    // Marcar pedido como cancelado
-    await db.collection("orders").updateOne(orderFilter, {
-      $set: {
-        status: "cancelled",
-        updatedAt: new Date(),
-      },
-      $push: {
-        statusHistory: {
-          status: "cancelled",
-          timestamp: new Date(),
-        },
-      },
-    });
+    console.log(`✅ Pedido ${id} cancelado`);
 
     return NextResponse.json({
       success: true,
@@ -431,10 +247,9 @@ export async function DELETE(request) {
     return NextResponse.json(
       {
         success: false,
-        error: "Error al cancelar pedido",
-        message: error.message,
+        message: "Error al cancelar pedido",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

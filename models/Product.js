@@ -1,14 +1,15 @@
 // models/Product.js
 /**
- * MODELO DE PRODUCTO
+ * MODELO DE PRODUCTO - PANADERÍA
  *
- * Define la estructura de los productos (cortes de carne) en MongoDB.
+ * Define la estructura de los productos de panadería en MongoDB.
  * Incluye información de precios, stock, categorías e imágenes.
  *
  * Categorías disponibles:
- * - Res: Cortes de res
- * - Cerdo: Cortes de cerdo
- * - Cortes: Cortes especiales/premium
+ * - Pan Dulce: Conchas, cuernitos, polvorones
+ * - Pan Salado: Bolillos, teleras, baguettes
+ * - Bollería: Croissants, donas, churros
+ * - Pasteles: Pasteles, gelatinas
  */
 
 import mongoose from "mongoose";
@@ -24,18 +25,18 @@ const ProductSchema = new mongoose.Schema(
       maxlength: [100, "El nombre no puede exceder 100 caracteres"],
     },
 
-    // Precio por kilogramo
+    // Precio por unidad
     price: {
       type: Number,
       required: [true, "El precio es obligatorio"],
       min: [0, "El precio no puede ser negativo"],
     },
 
-    // Peso unitario (por defecto 1 kg)
+    // Peso estimado en gramos
     weight: {
       type: Number,
-      default: 1,
-      min: [0.1, "El peso mínimo es 0.1 kg"],
+      default: 100,
+      min: [1, "El peso mínimo es 1 gramo"],
     },
 
     // URL de la imagen del producto
@@ -49,10 +50,10 @@ const ProductSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "La categoría es obligatoria"],
-      enum: ["Res", "Cerdo", "Cortes"],
+      enum: ["Pan Dulce", "Pan Salado", "Bollería", "Pasteles"],
     },
 
-    // Stock disponible en kilogramos
+    // Stock disponible en piezas
     stock: {
       type: Number,
       required: [true, "El stock es obligatorio"],
@@ -82,7 +83,7 @@ const ProductSchema = new mongoose.Schema(
   {
     // Agregar timestamps automáticos (createdAt, updatedAt)
     timestamps: true,
-  }
+  },
 );
 
 /**
@@ -101,7 +102,7 @@ ProductSchema.index({ name: "text", description: "text" });
  * MÉTODO DE INSTANCIA
  * Verifica si hay stock suficiente
  *
- * @param {number} quantity - Cantidad solicitada en kg
+ * @param {number} quantity - Cantidad solicitada en piezas
  * @returns {boolean} - true si hay stock, false si no
  */
 ProductSchema.methods.hasStock = function (quantity) {
@@ -112,12 +113,12 @@ ProductSchema.methods.hasStock = function (quantity) {
  * MÉTODO DE INSTANCIA
  * Reduce el stock del producto
  *
- * @param {number} quantity - Cantidad a reducir en kg
+ * @param {number} quantity - Cantidad a reducir en piezas
  * @returns {Promise<Object>} - Producto actualizado
  */
 ProductSchema.methods.reduceStock = async function (quantity) {
   if (!this.hasStock(quantity)) {
-    throw new Error(`Stock insuficiente. Disponible: ${this.stock}kg`);
+    throw new Error(`Stock insuficiente. Disponible: ${this.stock} piezas`);
   }
 
   this.stock -= quantity;
@@ -128,7 +129,7 @@ ProductSchema.methods.reduceStock = async function (quantity) {
  * MÉTODO DE INSTANCIA
  * Aumenta el stock del producto
  *
- * @param {number} quantity - Cantidad a agregar en kg
+ * @param {number} quantity - Cantidad a agregar en piezas
  * @returns {Promise<Object>} - Producto actualizado
  */
 ProductSchema.methods.addStock = async function (quantity) {
@@ -167,7 +168,7 @@ ProductSchema.statics.findPromos = function () {
 ProductSchema.statics.searchProducts = function (searchText) {
   return this.find(
     { $text: { $search: searchText }, isActive: true },
-    { score: { $meta: "textScore" } }
+    { score: { $meta: "textScore" } },
   ).sort({ score: { $meta: "textScore" } });
 };
 
