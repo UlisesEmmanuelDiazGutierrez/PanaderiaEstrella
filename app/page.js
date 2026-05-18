@@ -2,27 +2,24 @@
 
 /**
  * PÁGINA PRINCIPAL MODULARIZADA - PANADERÍA ARTESANAL
- * Archivo reducido (~500 líneas) que importa vistas separadas
- * Las rutas de API y funciones se mantienen sin cambios
+ * Archivo orquestador que importa vistas separadas.
+ * Basado en la arquitectura de Estrella Beef con adaptaciones para panadería.
  */
 
 import React, { useState, useEffect } from "react";
 import toast, { Toaster } from "react-hot-toast";
 
-//Importar vistas modulares (ubicar en src/components/views/)
 import LoginView from "@/components/LoginView";
 import CustomerView from "@/components/CustomerView";
 import AdminView from "@/components/AdminView";
 import DeliveryView from "@/components/DeliveryView";
 import ShippingView from "@/components/ShippingView";
 
-// NOTA: Descomenta las importaciones arriba cuando copies los archivos
-// Por ahora el código funciona sin modularizar
-
 function App() {
   // ========== ESTADOS ==========
   const [darkMode, setDarkMode] = useState(false);
   const [user, setUser] = useState(null);
+  const [hydrated, setHydrated] = useState(false);
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -37,11 +34,9 @@ function App() {
     address: "",
     phone: "",
   });
+
+  // ── Registro ──────────────────────────────────────────────────────────────
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [show2FAModal, setShow2FAModal] = useState(false);
-  const [tempUserId, setTempUserId] = useState(null);
-  const [code2FA, setCode2FA] = useState("");
   const [registerForm, setRegisterForm] = useState({
     name: "",
     email: "",
@@ -49,14 +44,25 @@ function App() {
     confirmPassword: "",
     phone: "",
   });
+
+  // ── Recuperar contraseña ──────────────────────────────────────────────────
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
+
+  // ── 2FA ───────────────────────────────────────────────────────────────────
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [tempUserId, setTempUserId] = useState(null);
+  const [code2FA, setCode2FA] = useState("");
   const [countdown, setCountdown] = useState(600);
+
   const [payment, setPayment] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // ── Formulario de producto ────────────────────────────────────────────────
   const [productForm, setProductForm] = useState({
     name: "",
     price: "",
-    weight: 1,
+    weight: 0.5,
     image: "",
     category: "Pan Dulce",
     stock: "",
@@ -70,39 +76,59 @@ function App() {
     bgSecondary: darkMode ? "#1f2937" : "#f3f4f6",
     text: darkMode ? "#ffffff" : "#000000",
     textSecondary: darkMode ? "#9ca3af" : "#4b5563",
-    primary: "#d97706",
+    primary: "#d97706", // ámbar — color de panadería
     primaryDark: "#92400e",
     border: darkMode ? "#374151" : "#e5e7eb",
     card: darkMode ? "#111827" : "#ffffff",
   };
 
-  // ========== EFECTOS ==========
+  // ========== HYDRATION / PERSISTENCIA ==========
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem("pan_user");
+      if (savedUser) setUser(JSON.parse(savedUser));
+      const savedDark = localStorage.getItem("darkMode");
+      if (savedDark === "true") setDarkMode(true);
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (user) localStorage.setItem("pan_user", JSON.stringify(user));
+    else localStorage.removeItem("pan_user");
+  }, [user, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem("darkMode", darkMode);
+  }, [darkMode, hydrated]);
+
   useEffect(() => {
     fetchProducts();
   }, []);
-
   useEffect(() => {
     if (user) fetchOrders();
   }, [user]);
 
+  // ── Countdown 2FA ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (show2FAModal && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (countdown === 0) {
+    } else if (show2FAModal && countdown === 0) {
       toast.error("El código ha expirado");
       setShow2FAModal(false);
     }
   }, [show2FAModal, countdown]);
 
-  // ========== FUNCIONES API (sin cambios) ==========
+  // ========== API ==========
   const fetchProducts = async () => {
     try {
-      const response = await fetch("/api/products");
-      const data = await response.json();
+      const res = await fetch("/api/products");
+      const data = await res.json();
       if (data.success) setProducts(data.data);
-    } catch (error) {
-      console.error("Error al cargar productos:", error);
+    } catch {
       toast.error("Error al cargar productos");
     }
   };
@@ -113,12 +139,11 @@ function App() {
       if (user.role === "customer") url += `?userId=${user.id}`;
       else if (user.role === "delivery") url += "?method=delivery";
       else if (user.role === "shipping") url += "?method=shipping";
-
-      const response = await fetch(url);
-      const data = await response.json();
+      const res = await fetch(url);
+      const data = await res.json();
       if (data.success) setOrders(data.data);
-    } catch (error) {
-      console.error("Error al cargar pedidos:", error);
+    } catch {
+      console.error("Error al cargar pedidos");
     }
   };
 
@@ -143,7 +168,7 @@ function App() {
         },
       ]);
     }
-    toast.success(`${p.name} agregado al carrito`);
+    toast.success(`Se agregó ${p.name} al carrito 🥖`);
   };
 
   const updateQty = (id, qty) => {
@@ -151,6 +176,7 @@ function App() {
     else setCart(cart.map((i) => (i.id === id ? { ...i, quantity: qty } : i)));
   };
 
+  // ── Login ──────────────────────────────────────────────────────────────────
   const login = async () => {
     if (!loginForm.email || !loginForm.password) {
       toast.error("Por favor completa todos los campos");
@@ -172,18 +198,19 @@ function App() {
           toast.success("Código enviado a tu correo");
         } else {
           setUser(data.user);
-          toast.success(`Bienvenido, ${data.user.name}`);
+          toast.success(`Bienvenido, ${data.user.name} 🥖`);
         }
       } else {
         toast.error(data.message || "Error al iniciar sesión");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
     }
   };
 
+  // ── 2FA ────────────────────────────────────────────────────────────────────
   const verify2FA = async () => {
     if (code2FA.length !== 6) {
       toast.error("Ingresa el código de 6 dígitos");
@@ -200,17 +227,18 @@ function App() {
       if (data.success) {
         setUser(data.user);
         setShow2FAModal(false);
-        toast.success(`Bienvenido, ${data.user.name}`);
+        toast.success(`Bienvenido, ${data.user.name} 🥖`);
       } else {
         toast.error(data.message || "Código incorrecto");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Registro ───────────────────────────────────────────────────────────────
   const register = async () => {
     if (
       !registerForm.name ||
@@ -239,7 +267,7 @@ function App() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success("Cuenta creada exitosamente");
+        toast.success("Cuenta creada exitosamente 🎉");
         setShowRegisterModal(false);
         setRegisterForm({
           name: "",
@@ -249,15 +277,16 @@ function App() {
           phone: "",
         });
       } else {
-        toast.error(data.message || "Error al registrar");
+        toast.error(data.message || "Error al crear cuenta");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Forgot password ────────────────────────────────────────────────────────
   const forgotPassword = async () => {
     if (!forgotEmail) {
       toast.error("Ingresa tu correo electrónico");
@@ -265,7 +294,7 @@ function App() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/forgot-password", {
+      const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail }),
@@ -277,25 +306,22 @@ function App() {
       } else {
         toast.error(data.message || "Error al enviar código");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Crear pedido ───────────────────────────────────────────────────────────
   const createOrder = async () => {
     if (!delivery.name || !delivery.address || !delivery.phone) {
       toast.error("Completa los datos de entrega");
       return;
     }
-    if (!payment) {
-      toast.error("Selecciona un método de pago");
-      return;
-    }
-
     const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-    const weight = cart.reduce((s, i) => s + i.weight * i.quantity, 0);
+    const totalPiezas = cart.reduce((s, i) => s + i.quantity, 0);
+    const weight = cart.reduce((s, i) => s + (i.weight ?? 0) * i.quantity, 0);
 
     setLoading(true);
     try {
@@ -307,30 +333,32 @@ function App() {
           items: cart,
           total,
           weight,
+          totalPiezas,
           delivery,
-          payment,
-          method: weight > 50 ? "shipping" : "delivery",
+          payment: "cash",
+          // 1–25 piezas → repartidor local, 26+ → paquetería
+          method: totalPiezas > 25 ? "shipping" : "delivery",
         }),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success("¡Pedido creado exitosamente!");
+        toast.success("¡Pedido creado exitosamente! 🥖");
         setCart([]);
         setShowCart(false);
         setShowCheckout(false);
         setDelivery({ name: "", address: "", phone: "" });
-        setPayment("");
         fetchOrders();
       } else {
         toast.error(data.message || "Error al crear pedido");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Actualizar estado de pedido ────────────────────────────────────────────
   const updateStatus = async (orderId, status) => {
     try {
       const res = await fetch("/api/orders", {
@@ -345,11 +373,12 @@ function App() {
       } else {
         toast.error("Error al actualizar");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     }
   };
 
+  // ── Producto modal ─────────────────────────────────────────────────────────
   const openProductModal = (product = null) => {
     if (product) {
       setEditingProduct(product);
@@ -368,7 +397,7 @@ function App() {
       setProductForm({
         name: "",
         price: "",
-        weight: 1,
+        weight: 0.5,
         image: "",
         category: "Pan Dulce",
         stock: "",
@@ -383,13 +412,11 @@ function App() {
     e.preventDefault();
     setLoading(true);
     try {
-      const url = "/api/products";
       const method = editingProduct ? "PUT" : "POST";
       const body = editingProduct
         ? { ...productForm, id: editingProduct._id }
         : productForm;
-
-      const res = await fetch(url, {
+      const res = await fetch("/api/products", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -406,7 +433,7 @@ function App() {
       } else {
         toast.error(data.message || "Error al guardar producto");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     } finally {
       setLoading(false);
@@ -428,7 +455,7 @@ function App() {
       } else {
         toast.error("Error al eliminar");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error en el servidor");
     }
   };
@@ -443,23 +470,24 @@ function App() {
       a.download = `reporte_${type}_${Date.now()}.xlsx`;
       a.click();
       toast.success("Reporte generado");
-    } catch (error) {
+    } catch {
       toast.error("Error al generar reporte");
     }
   };
-  // ========== RENDERIZADO CONDICIONAL ==========
-  if (!user) {
+
+  // ========== RENDERIZADO ==========
+  if (!hydrated) {
     return (
-      <LoginView
-        loginForm={loginForm}
-        setLoginForm={setLoginForm}
-        handleLogin={login}
-        loading={loading}
-      />
+      <div className="min-h-screen flex items-center justify-center bg-amber-50">
+        <div className="text-center">
+          <div className="text-5xl mb-4">🥖</div>
+          <div className="w-8 h-8 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        </div>
+      </div>
     );
   }
 
-  if (user.role === "delivery") {
+  if (user?.role === "delivery") {
     return (
       <DeliveryView
         theme={theme}
@@ -471,7 +499,7 @@ function App() {
     );
   }
 
-  if (user.role === "shipping") {
+  if (user?.role === "shipping") {
     return (
       <ShippingView
         theme={theme}
@@ -483,7 +511,7 @@ function App() {
     );
   }
 
-  if (user.role === "admin") {
+  if (user?.role === "admin") {
     return (
       <AdminView
         theme={theme}
@@ -507,7 +535,7 @@ function App() {
     );
   }
 
-  // Cliente (default)
+  // Cliente (sin sesión o rol customer)
   return (
     <CustomerView
       theme={theme}
@@ -515,6 +543,7 @@ function App() {
       setDarkMode={setDarkMode}
       user={user}
       setUser={setUser}
+      onLoginSuccess={(userData) => setUser(userData)}
       cart={cart}
       setCart={setCart}
       products={products}

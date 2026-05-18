@@ -101,7 +101,9 @@ const DeliveryView = ({ theme, user, setUser, orders, updateStatus }) => {
                   <p className="flex items-center gap-2">
                     <Package size={16} style={{ color: "#059669" }} />
                     <span className="font-semibold">Peso:</span>
-                    <span className="text-red-600 font-bold">{o.weight}kg</span>
+                    <span className="text-amber-600 font-bold">
+                      {o.weight}kg
+                    </span>
                   </p>
                   {o.customer.address && (
                     <p className="flex items-center gap-2">
@@ -116,6 +118,30 @@ const DeliveryView = ({ theme, user, setUser, orders, updateStatus }) => {
                     </p>
                   )}
                 </div>
+
+                {/* Productos del pedido */}
+                {o.items && o.items.length > 0 && (
+                  <div
+                    className="mb-4 p-3 rounded-lg"
+                    style={{ backgroundColor: theme.bgSecondary }}
+                  >
+                    <p
+                      className="text-xs font-semibold mb-2"
+                      style={{ color: theme.textSecondary }}
+                    >
+                      🥖 Productos:
+                    </p>
+                    {o.items.map((item, idx) => (
+                      <p
+                        key={idx}
+                        className="text-xs"
+                        style={{ color: theme.text }}
+                      >
+                        • {item.name} × {item.quantity}
+                      </p>
+                    ))}
+                  </div>
+                )}
 
                 {/* Botones de acción */}
                 <div
