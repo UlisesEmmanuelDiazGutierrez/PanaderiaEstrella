@@ -1,5 +1,13 @@
 /**
- * HOOKS PERSONALIZADOS - TODOS EN UN ARCHIVO
+ * hooks/index.js
+ * Hooks actualizados para Supabase/PostgreSQL
+ *
+ * Cambios respecto a la versión MongoDB:
+ *  - useCart: product._id → product._id (las APIs normalizan al mismo shape, sin cambios)
+ *  - useOrders: pasa clientId (id numérico) en lugar de string ObjectId
+ *  - Los estados de pedido usan los valores del CHECK:
+ *      pendiente | picked | transit | delivered | cancelado
+ *    (antes: pending | cancelled — mapear en el UI si hace falta)
  */
 
 import { useState, useEffect } from "react";
@@ -36,7 +44,7 @@ export function useAuth() {
       } else {
         toast.error(data.error || "Credenciales incorrectas");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error al iniciar sesión");
     } finally {
       setLoading(false);
@@ -48,7 +56,6 @@ export function useAuth() {
       toast.error("El código debe tener 6 dígitos");
       return;
     }
-
     setLoading(true);
     try {
       const response = await fetch("/api/auth/verify-2fa", {
@@ -57,7 +64,6 @@ export function useAuth() {
         body: JSON.stringify({ userId: tempUserId, code }),
       });
       const data = await response.json();
-
       if (data.success) {
         setUser(data.user);
         setShow2FAModal(false);
@@ -65,7 +71,7 @@ export function useAuth() {
       } else {
         toast.error(data.error || "Código incorrecto");
       }
-    } catch (error) {
+    } catch {
       toast.error("Error al verificar código");
     } finally {
       setLoading(false);
@@ -107,8 +113,7 @@ export function useProducts() {
       const response = await fetch("/api/products");
       const data = await response.json();
       if (data.success) setProducts(data.data);
-    } catch (error) {
-      console.error("Error:", error);
+    } catch {
       toast.error("Error al cargar productos");
     } finally {
       setLoading(false);
@@ -117,12 +122,12 @@ export function useProducts() {
 
   const createProduct = async (productData) => {
     try {
-      const response = await fetch("/api/products", {
+      const res = await fetch("/api/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(productData),
       });
-      const data = await response.json();
+      const data = await res.json();
       if (data.success) {
         toast.success("Producto creado");
         await fetchProducts();
@@ -130,7 +135,7 @@ export function useProducts() {
       }
       toast.error(data.error);
       return false;
-    } catch (error) {
+    } catch {
       toast.error("Error al crear producto");
       return false;
     }
@@ -138,12 +143,12 @@ export function useProducts() {
 
   const updateProduct = async (id, productData) => {
     try {
-      const response = await fetch("/api/products", {
+      const res = await fetch("/api/products", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...productData, id }),
       });
-      const data = await response.json();
+      const data = await res.json();
       if (data.success) {
         toast.success("Producto actualizado");
         await fetchProducts();
@@ -151,7 +156,7 @@ export function useProducts() {
       }
       toast.error(data.error);
       return false;
-    } catch (error) {
+    } catch {
       toast.error("Error al actualizar");
       return false;
     }
@@ -160,10 +165,8 @@ export function useProducts() {
   const deleteProduct = async (id) => {
     if (!confirm("¿Eliminar este producto?")) return false;
     try {
-      const response = await fetch(`/api/products?id=${id}`, {
-        method: "DELETE",
-      });
-      const data = await response.json();
+      const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
       if (data.success) {
         toast.success("Producto eliminado");
         await fetchProducts();
@@ -171,7 +174,7 @@ export function useProducts() {
       }
       toast.error(data.error);
       return false;
-    } catch (error) {
+    } catch {
       toast.error("Error al eliminar");
       return false;
     }
@@ -203,15 +206,16 @@ export function useOrders(user) {
     setLoading(true);
     try {
       let url = "/api/orders";
+      // Las APIs reciben id_usuario (integer) para resolver el id_cliente internamente
       if (user.role === "customer") url += `?userId=${user.id}`;
       else if (user.role === "delivery") url += "?method=delivery";
       else if (user.role === "shipping") url += "?method=shipping";
 
-      const response = await fetch(url);
-      const data = await response.json();
+      const res = await fetch(url);
+      const data = await res.json();
       if (data.success) setOrders(data.data);
-    } catch (error) {
-      console.error("Error:", error);
+    } catch {
+      console.error("Error al obtener pedidos");
     } finally {
       setLoading(false);
     }
@@ -220,13 +224,12 @@ export function useOrders(user) {
   const createOrder = async (orderData) => {
     setLoading(true);
     try {
-      const response = await fetch("/api/orders", {
+      const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderData),
       });
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
         toast.success("¡Pedido creado exitosamente!");
         await fetchOrders();
@@ -234,7 +237,7 @@ export function useOrders(user) {
       }
       toast.error(data.error || "Error al crear pedido");
       return false;
-    } catch (error) {
+    } catch {
       toast.error("Error al crear pedido");
       return false;
     } finally {
@@ -245,7 +248,7 @@ export function useOrders(user) {
   const updateStatus = async (orderId, newStatus) => {
     setLoading(true);
     try {
-      const response = await fetch("/api/orders", {
+      const res = await fetch("/api/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -254,8 +257,7 @@ export function useOrders(user) {
           updatedBy: user.id,
         }),
       });
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
         toast.success(`Pedido actualizado a: ${newStatus}`);
         await fetchOrders();
@@ -263,7 +265,7 @@ export function useOrders(user) {
       }
       toast.error(data.error);
       return false;
-    } catch (error) {
+    } catch {
       toast.error("Error al actualizar");
       return false;
     } finally {
@@ -276,24 +278,27 @@ export function useOrders(user) {
 
 // ==========================================
 // HOOK DE CARRITO
+// Sin cambios — el shape de productos lo normaliza la API (/api/products)
 // ==========================================
 export function useCart() {
   const [cart, setCart] = useState([]);
 
   const addToCart = (product) => {
-    const exists = cart.find((i) => i.id === product._id);
+    // Soporte tanto para _id (normalizado) como id
+    const pid = product._id ?? product.id;
+    const exists = cart.find((i) => i.id === pid);
     if (exists) {
       setCart(
         cart.map((i) =>
-          i.id === product._id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.id === pid ? { ...i, quantity: i.quantity + 1 } : i,
         ),
       );
-      toast.success(`Se agregó 1kg más de ${product.name}`);
+      toast.success(`Se agregó 1 más de ${product.name}`);
     } else {
       setCart([
         ...cart,
         {
-          id: product._id,
+          id: pid,
           name: product.name,
           price: product.price,
           weight: product.weight,
@@ -309,19 +314,17 @@ export function useCart() {
     if (qty <= 0) {
       const item = cart.find((i) => i.id === id);
       setCart(cart.filter((i) => i.id !== id));
-      toast.success(`${item.name} eliminado`);
+      toast.success(`${item?.name} eliminado`);
     } else {
       setCart(cart.map((i) => (i.id === id ? { ...i, quantity: qty } : i)));
     }
   };
 
-  const clearCart = () => {
-    setCart([]);
-  };
+  const clearCart = () => setCart([]);
 
-  const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const weight = cart.reduce((sum, i) => sum + i.weight * i.quantity, 0);
-  const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
+  const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const weight = cart.reduce((s, i) => s + (i.weight ?? 1) * i.quantity, 0);
+  const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   return {
     cart,

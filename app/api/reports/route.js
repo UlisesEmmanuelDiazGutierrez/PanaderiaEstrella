@@ -1,16 +1,13 @@
 /**
- * API DE REPORTES
+ * app/api/reports/route.js
+ * Reporte de ventas en CSV — migrado de MongoDB a Supabase/PostgreSQL
  *
  * GET /api/reports?period=all|year|month&year=2025&month=12
- * Genera reportes en formato CSV para Excel
  */
 
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
+import { supabase } from "@/lib/supabase";
 
-/**
- * GET - Generar reporte de ventas
- */
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,34 +16,45 @@ export async function GET(request) {
     const month =
       parseInt(searchParams.get("month")) || new Date().getMonth() + 1;
 
-    const client = await clientPromise;
-    const db = client.db("panaderia_db");
-
-    // Construir filtro de fecha
-    let dateFilter = {};
+    // ── Construir filtro de fecha ──────────────────────────────────────────
+    let query = supabase
+      .from("pedidos")
+      .select(
+        `
+        id_pedido,
+        fecha,
+        estado,
+        total,
+        clientes (
+          direccion,
+          usuarios ( nombre, telefono )
+        ),
+        detalle_pedidos (
+          cantidad,
+          precio_unitario,
+          productos ( nombre, atributos )
+        ),
+        pagos ( metodo_pago ),
+        envios ( id_repartidor, id_paqueteria )
+      `,
+      )
+      .neq("estado", "cancelado")
+      .order("fecha", { ascending: false });
 
     if (period === "year") {
-      const startDate = new Date(year, 0, 1);
-      const endDate = new Date(year, 11, 31, 23, 59, 59);
-      dateFilter = {
-        createdAt: { $gte: startDate, $lte: endDate },
-      };
+      query = query.gte("fecha", `${year}-01-01`).lte("fecha", `${year}-12-31`);
     } else if (period === "month") {
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59);
-      dateFilter = {
-        createdAt: { $gte: startDate, $lte: endDate },
-      };
+      const lastDay = new Date(year, month, 0).getDate();
+      const mm = String(month).padStart(2, "0");
+      query = query
+        .gte("fecha", `${year}-${mm}-01`)
+        .lte("fecha", `${year}-${mm}-${lastDay}`);
     }
 
-    // Obtener pedidos
-    const orders = await db
-      .collection("orders")
-      .find({ ...dateFilter, status: { $ne: "cancelled" } })
-      .sort({ createdAt: -1 })
-      .toArray();
+    const { data: pedidos, error } = await query;
+    if (error) throw error;
 
-    // Generar CSV
+    // ── Generar CSV ────────────────────────────────────────────────────────
     const headers = [
       "ID Pedido",
       "Fecha",
@@ -54,59 +62,69 @@ export async function GET(request) {
       "Teléfono",
       "Dirección",
       "Total",
-      "Peso (kg)",
       "Método Entrega",
       "Método Pago",
       "Estado",
       "Productos",
     ];
 
-    const rows = orders.map((order) => {
-      const productos = order.items
-        .map((item) => `${item.name} (${item.quantity}kg)`)
+    const rows = pedidos.map((p) => {
+      const productos = (p.detalle_pedidos || [])
+        .map((d) => {
+          const pesoKg = d.productos?.atributos?.peso_g
+            ? (d.productos.atributos.peso_g / 1000) * d.cantidad
+            : d.cantidad;
+          return `${d.productos?.nombre ?? "?"} (${pesoKg}kg)`;
+        })
         .join("; ");
 
+      const metodoEntrega = p.envios?.[0]?.id_paqueteria
+        ? "Paquetería"
+        : "Local";
+      const metodoPago =
+        {
+          tarjeta: "Tarjeta",
+          transferencia: "Transferencia",
+          efectivo: "Efectivo",
+          otro: "Otro",
+        }[p.pagos?.[0]?.metodo_pago] ?? "Efectivo";
+
       return [
-        order._id.toString().slice(-8),
-        new Date(order.createdAt).toLocaleDateString("es-MX"),
-        order.customer.name,
-        order.customer.phone,
-        order.customer.address,
-        `$${order.total}`,
-        order.weight,
-        order.method === "delivery" ? "Local" : "Paquetería",
-        order.payment === "card"
-          ? "Tarjeta"
-          : order.payment === "transfer"
-            ? "Transferencia"
-            : "Efectivo",
-        order.status,
+        String(p.id_pedido).padStart(8, "0"),
+        new Date(p.fecha).toLocaleDateString("es-MX"),
+        p.clientes?.usuarios?.nombre ?? "",
+        p.clientes?.usuarios?.telefono ?? "",
+        p.clientes?.direccion ?? "",
+        `$${parseFloat(p.total).toFixed(2)}`,
+        metodoEntrega,
+        metodoPago,
+        p.estado,
         productos,
       ];
     });
 
-    // Construir CSV
+    // ── Estadísticas ───────────────────────────────────────────────────────
+    const totalVentas = pedidos.reduce((s, p) => s + parseFloat(p.total), 0);
+    const totalPedidos = pedidos.length;
+
     const csvContent = [
       headers.join(","),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+      ...rows.map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+      ),
+      "",
+      '"RESUMEN"',
+      `"Total Pedidos","${totalPedidos}"`,
+      `"Total Ventas","$${totalVentas.toFixed(2)}"`,
     ].join("\n");
 
-    // Calcular estadísticas
-    const totalVentas = orders.reduce((sum, o) => sum + o.total, 0);
-    const totalPedidos = orders.length;
-    const pesoTotal = orders.reduce((sum, o) => sum + o.weight, 0);
+    const filename = `reporte_ventas_${period}_${year}${period === "month" ? "_" + month : ""}.csv`;
 
-    // Agregar resumen al final
-    const resumen = `\n\n"RESUMEN"\n"Total Pedidos","${totalPedidos}"\n"Total Ventas","$${totalVentas}"\n"Peso Total","${pesoTotal}kg"`;
-
-    // Retornar CSV
-    return new NextResponse(csvContent + resumen, {
+    return new NextResponse(csvContent, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="reporte_ventas_${period}_${year}${
-          period === "month" ? "_" + month : ""
-        }.csv"`,
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
   } catch (error) {

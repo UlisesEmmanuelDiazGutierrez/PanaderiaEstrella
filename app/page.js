@@ -3,7 +3,6 @@
 /**
  * PÁGINA PRINCIPAL MODULARIZADA - PANADERÍA ARTESANAL
  * Archivo orquestador que importa vistas separadas.
- * Basado en la arquitectura de Estrella Beef con adaptaciones para panadería.
  */
 
 import React, { useState, useEffect } from "react";
@@ -14,6 +13,9 @@ import CustomerView from "@/components/CustomerView";
 import AdminView from "@/components/AdminView";
 import DeliveryView from "@/components/DeliveryView";
 import ShippingView from "@/components/ShippingView";
+
+// Normaliza _id (Mongo) → id (Supabase), soporta ambos
+const getId = (obj) => obj?.id ?? obj?._id;
 
 function App() {
   // ========== ESTADOS ==========
@@ -76,7 +78,7 @@ function App() {
     bgSecondary: darkMode ? "#1f2937" : "#f3f4f6",
     text: darkMode ? "#ffffff" : "#000000",
     textSecondary: darkMode ? "#9ca3af" : "#4b5563",
-    primary: "#d97706", // ámbar — color de panadería
+    primary: "#d97706",
     primaryDark: "#92400e",
     border: darkMode ? "#374151" : "#e5e7eb",
     card: darkMode ? "#111827" : "#ffffff",
@@ -107,6 +109,7 @@ function App() {
   useEffect(() => {
     fetchProducts();
   }, []);
+
   useEffect(() => {
     if (user) fetchOrders();
   }, [user]);
@@ -147,19 +150,21 @@ function App() {
     }
   };
 
+  // FIX: usa getId(p) para soportar tanto _id (Mongo) como id (Supabase)
   const addToCart = (p) => {
-    const exists = cart.find((i) => i.id === p._id);
+    const pid = getId(p);
+    const exists = cart.find((i) => i.id === pid);
     if (exists) {
       setCart(
         cart.map((i) =>
-          i.id === p._id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.id === pid ? { ...i, quantity: i.quantity + 1 } : i,
         ),
       );
     } else {
       setCart([
         ...cart,
         {
-          id: p._id,
+          id: pid,
           name: p.name,
           price: p.price,
           weight: p.weight,
@@ -191,7 +196,8 @@ function App() {
       });
       const data = await res.json();
       if (data.success) {
-        if (data.requires2FA) {
+        // FIX: el route devuelve "require2FA" (sin la 's'), no "requires2FA"
+        if (data.require2FA) {
           setTempUserId(data.userId);
           setShow2FAModal(true);
           setCountdown(600);
@@ -201,7 +207,7 @@ function App() {
           toast.success(`Bienvenido, ${data.user.name} 🥖`);
         }
       } else {
-        toast.error(data.message || "Error al iniciar sesión");
+        toast.error(data.error || data.message || "Error al iniciar sesión");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -229,7 +235,7 @@ function App() {
         setShow2FAModal(false);
         toast.success(`Bienvenido, ${data.user.name} 🥖`);
       } else {
-        toast.error(data.message || "Código incorrecto");
+        toast.error(data.error || data.message || "Código incorrecto");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -277,7 +283,7 @@ function App() {
           phone: "",
         });
       } else {
-        toast.error(data.message || "Error al crear cuenta");
+        toast.error(data.error || data.message || "Error al crear cuenta");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -304,7 +310,7 @@ function App() {
         toast.success("Código enviado a tu correo");
         setShowForgotModal(false);
       } else {
-        toast.error(data.message || "Error al enviar código");
+        toast.error(data.error || data.message || "Error al enviar código");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -336,7 +342,6 @@ function App() {
           totalPiezas,
           delivery,
           payment: "cash",
-          // 1–25 piezas → repartidor local, 26+ → paquetería
           method: totalPiezas > 25 ? "shipping" : "delivery",
         }),
       });
@@ -349,7 +354,7 @@ function App() {
         setDelivery({ name: "", address: "", phone: "" });
         fetchOrders();
       } else {
-        toast.error(data.message || "Error al crear pedido");
+        toast.error(data.error || data.message || "Error al crear pedido");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -371,7 +376,7 @@ function App() {
         toast.success("Estado actualizado");
         fetchOrders();
       } else {
-        toast.error("Error al actualizar");
+        toast.error(data.error || "Error al actualizar");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -408,13 +413,14 @@ function App() {
     setShowProductModal(true);
   };
 
+  // FIX: usa getId(editingProduct) en lugar de editingProduct._id
   const saveProduct = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const method = editingProduct ? "PUT" : "POST";
       const body = editingProduct
-        ? { ...productForm, id: editingProduct._id }
+        ? { ...productForm, id: getId(editingProduct) }
         : productForm;
       const res = await fetch("/api/products", {
         method,
@@ -431,7 +437,7 @@ function App() {
         setShowProductModal(false);
         fetchProducts();
       } else {
-        toast.error(data.message || "Error al guardar producto");
+        toast.error(data.error || data.message || "Error al guardar producto");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -440,20 +446,24 @@ function App() {
     }
   };
 
+  // FIX: manda el id en la URL (?id=X) en lugar de en el body
+  // El route de productos espera: DELETE /api/products?id=X
   const deleteProduct = async (id) => {
+    if (!id) {
+      toast.error("ID de producto inválido");
+      return;
+    }
     if (!confirm("¿Eliminar este producto?")) return;
     try {
-      const res = await fetch("/api/products", {
+      const res = await fetch(`/api/products?id=${id}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
       });
       const data = await res.json();
       if (data.success) {
         toast.success("Producto eliminado");
         fetchProducts();
       } else {
-        toast.error("Error al eliminar");
+        toast.error(data.error || "Error al eliminar");
       }
     } catch {
       toast.error("Error en el servidor");
@@ -535,7 +545,6 @@ function App() {
     );
   }
 
-  // Cliente (sin sesión o rol customer)
   return (
     <CustomerView
       theme={theme}

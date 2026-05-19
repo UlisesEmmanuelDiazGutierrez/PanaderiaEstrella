@@ -20,6 +20,9 @@ import {
   UserPlus,
 } from "lucide-react";
 
+// Normaliza _id → id para compatibilidad con Supabase
+const getId = (obj) => obj?.id ?? obj?._id;
+
 // ── Mini formulario de registro inline ───────────────────────────────────────
 const RegisterInline = ({ onBack }) => {
   const [form, setForm] = useState({

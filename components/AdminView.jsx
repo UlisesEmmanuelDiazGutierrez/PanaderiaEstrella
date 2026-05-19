@@ -25,6 +25,8 @@ import {
   Upload,
 } from "lucide-react";
 
+const getId = (obj) => obj?.id ?? obj?._id;
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 const ROLES = [
   { value: "customer", label: "Comprador", color: "bg-blue-100 text-blue-800" },
@@ -399,7 +401,8 @@ const AdminView = ({
       const res = await fetch("/api/users/", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingUser._id, ...userForm }),
+        // ✅ FIX: usa getId() en lugar de editingUser._id
+        body: JSON.stringify({ id: getId(editingUser), ...userForm }),
       });
       const data = await res.json();
       if (data.success) {
@@ -407,7 +410,9 @@ const AdminView = ({
         setShowUserModal(false);
         setEditingUser(null);
         fetchUsers();
-      } else toast.error(data.message ?? "Error al actualizar usuario");
+      } else {
+        toast.error(data.message ?? "Error al actualizar usuario");
+      }
     } catch {
       toast.error("Error de conexión");
     } finally {
@@ -416,7 +421,8 @@ const AdminView = ({
   };
 
   const deleteUser = async (u) => {
-    if (u._id === user.id || u.email === user.email) {
+    // ✅ FIX: compara con getId() en lugar de u._id
+    if (getId(u) === user.id || u.email === user.email) {
       toast.error("No puedes eliminar tu propia cuenta");
       return;
     }
@@ -426,17 +432,21 @@ const AdminView = ({
       )
     )
       return;
+
     try {
       const res = await fetch("/api/users", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: u._id }),
+        // ✅ FIX: usa getId() en lugar de u._id
+        body: JSON.stringify({ id: getId(u) }),
       });
       const data = await res.json();
       if (data.success) {
         toast.success("Usuario eliminado");
         fetchUsers();
-      } else toast.error(data.error ?? "Error al eliminar usuario");
+      } else {
+        toast.error(data.error ?? "Error al eliminar usuario");
+      }
     } catch {
       toast.error("Error de conexión");
     }
@@ -870,7 +880,7 @@ const AdminView = ({
                               <Edit size={18} />
                             </button>
                             <button
-                              onClick={() => deleteProduct(p._id)}
+                              onClick={() => deleteProduct(getId(p))}
                               className="p-2 rounded-lg text-red-600 transition-all"
                               style={{
                                 backgroundColor: darkMode
@@ -1103,7 +1113,7 @@ const AdminView = ({
                       const role = roleInfo(u.role);
                       return (
                         <tr
-                          key={u._id}
+                          key={getId(u)}
                           className="border-t transition-colors"
                           style={{ borderColor: theme.border }}
                         >
@@ -1157,19 +1167,20 @@ const AdminView = ({
                               >
                                 <Edit size={16} /> Editar
                               </button>
-                              {u._id !== user.id && u.email !== user.email && (
-                                <button
-                                  onClick={() => deleteUser(u)}
-                                  className="p-2 rounded-lg text-red-600 transition-all flex items-center gap-1 text-sm font-medium"
-                                  style={{
-                                    backgroundColor: darkMode
-                                      ? "rgba(239,68,68,0.1)"
-                                      : "rgba(254,202,202,0.3)",
-                                  }}
-                                >
-                                  <Trash2 size={16} /> Eliminar
-                                </button>
-                              )}
+                              {getId(u) !== user.id &&
+                                u.email !== user.email && (
+                                  <button
+                                    onClick={() => deleteUser(u)}
+                                    className="p-2 rounded-lg text-red-600 transition-all flex items-center gap-1 text-sm font-medium"
+                                    style={{
+                                      backgroundColor: darkMode
+                                        ? "rgba(239,68,68,0.1)"
+                                        : "rgba(254,202,202,0.3)",
+                                    }}
+                                  >
+                                    <Trash2 size={16} /> Eliminar
+                                  </button>
+                                )}
                             </div>
                           </td>
                         </tr>

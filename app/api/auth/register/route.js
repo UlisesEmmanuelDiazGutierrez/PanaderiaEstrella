@@ -1,51 +1,39 @@
 /**
- * API DE AUTENTICACIÓN - REGISTRO
+ * app/api/auth/register/route.js
+ * Registro de usuarios — migrado de MongoDB a Supabase/PostgreSQL
  *
- * Endpoint para registrar nuevos usuarios
  * POST /api/auth/register
- *
- * Body: { name, email, password, role (opcional), phone, defaultAddress }
- * Response: { success: boolean, user: object }
+ * Body: { name, email, password, role?, phone?, defaultAddress? }
  */
 
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
+import { supabase } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 
-/**
- * POST - Registrar nuevo usuario
- */
+const EMAIL_REGEX = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+const VALID_ROLES = ["customer", "delivery", "shipping", "admin"];
+
 export async function POST(request) {
   try {
     const body = await request.json();
 
-    // Validar campos requeridos
-    const requiredFields = ["name", "email", "password"];
-    for (const field of requiredFields) {
+    // ── Validaciones ───────────────────────────────────────────────────────
+    for (const field of ["name", "email", "password"]) {
       if (!body[field]) {
         return NextResponse.json(
-          {
-            success: false,
-            error: `El campo '${field}' es obligatorio`,
-          },
+          { success: false, error: `El campo '${field}' es obligatorio` },
           { status: 400 },
         );
       }
     }
 
-    // Validar email
-    const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
-    if (!emailRegex.test(body.email)) {
+    if (!EMAIL_REGEX.test(body.email)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Email inválido",
-        },
+        { success: false, error: "Email inválido" },
         { status: 400 },
       );
     }
 
-    // Validar contraseña (mínimo 3 caracteres)
     if (body.password.length < 3) {
       return NextResponse.json(
         {
@@ -56,72 +44,92 @@ export async function POST(request) {
       );
     }
 
-    // Validar rol
-    const validRoles = ["customer", "delivery", "shipping", "admin"];
     const role = body.role || "customer";
-    if (!validRoles.includes(role)) {
+    if (!VALID_ROLES.includes(role)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Rol inválido",
-        },
+        { success: false, error: "Rol inválido" },
         { status: 400 },
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db("panaderia_db");
+    // ── Verificar email duplicado ──────────────────────────────────────────
+    const { data: existing } = await supabase
+      .from("usuarios")
+      .select("id_usuario")
+      .eq("email", body.email.toLowerCase().trim())
+      .maybeSingle();
 
-    // Verificar si el email ya existe
-    const existingUser = await db.collection("users").findOne({
-      email: body.email.toLowerCase().trim(),
-    });
-
-    if (existingUser) {
+    if (existing) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Este email ya está registrado",
-        },
+        { success: false, error: "Este email ya está registrado" },
         { status: 409 },
       );
     }
 
-    // Encriptar contraseña
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(body.password, salt);
+    // ── Hashear contraseña ─────────────────────────────────────────────────
+    const hashedPassword = await bcrypt.hash(body.password, 10);
 
-    // Crear objeto de usuario
-    const newUser = {
-      name: body.name.trim(),
-      email: body.email.toLowerCase().trim(),
-      password: hashedPassword,
-      role: role,
-      phone: body.phone || "",
-      defaultAddress: body.defaultAddress || "",
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    // ── Insertar usuario ───────────────────────────────────────────────────
+    const { data: newUser, error: userError } = await supabase
+      .from("usuarios")
+      .insert({
+        nombre: body.name.trim(),
+        email: body.email.toLowerCase().trim(),
+        password: hashedPassword,
+        telefono: body.phone || null,
+        activo: true,
+        metadata: {},
+      })
+      .select("id_usuario, nombre, email, telefono")
+      .single();
 
-    // Insertar en la base de datos
-    const result = await db.collection("users").insertOne(newUser);
+    if (userError) throw userError;
 
-    // Preparar datos del usuario (sin contraseña)
-    const userData = {
-      id: result.insertedId.toString(),
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      phone: newUser.phone,
-      defaultAddress: newUser.defaultAddress,
-    };
+    // ── Obtener id del rol ─────────────────────────────────────────────────
+    const { data: rolData, error: rolError } = await supabase
+      .from("roles")
+      .select("id_rol")
+      .eq("nombre_rol", role)
+      .single();
+
+    if (rolError || !rolData)
+      throw new Error(`Rol '${role}' no encontrado en la BD`);
+
+    // ── Asignar rol ────────────────────────────────────────────────────────
+    await supabase.from("usuarios_roles").insert({
+      id_usuario: newUser.id_usuario,
+      id_rol: rolData.id_rol,
+    });
+
+    // ── Crear registro específico según rol ────────────────────────────────
+    if (role === "customer") {
+      await supabase.from("clientes").insert({
+        id_usuario: newUser.id_usuario,
+        direccion: body.defaultAddress || null,
+      });
+    } else if (role === "delivery") {
+      await supabase.from("repartidores").insert({
+        id_usuario: newUser.id_usuario,
+        disponible: true,
+      });
+    } else if (role === "admin") {
+      await supabase.from("administradores").insert({
+        id_usuario: newUser.id_usuario,
+        nivel_acceso: "FULL",
+      });
+    }
 
     return NextResponse.json(
       {
         success: true,
         message: "Usuario registrado exitosamente",
-        user: userData,
+        user: {
+          id: newUser.id_usuario,
+          name: newUser.nombre,
+          email: newUser.email,
+          role,
+          phone: newUser.telefono,
+        },
       },
       { status: 201 },
     );
